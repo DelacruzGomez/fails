@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CameraScreen extends StatefulWidget {
   final double targetLat; 
@@ -16,6 +17,7 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> {
   bool _isNear = false;
   bool _isLoading = true;
+  bool _isUploading = false;
   String _message = "Verificando tu ubicación...";
   File? _imageFile;
 
@@ -60,7 +62,8 @@ class _CameraScreenState extends State<CameraScreen> {
       );
 
       setState(() {
-        _isNear = distanceInMeters <= 150; 
+        // Incrementado para facilitar pruebas en el MVP
+        _isNear = distanceInMeters <= 500; 
         _isLoading = false;
       });
     } catch (e) {
@@ -71,37 +74,61 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  Future<void> _takePicture() async {
+  Future<void> _takeAndUploadPicture() async {
     final picker = ImagePicker();
     try {
       final pickedFile = await picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1080, 
-        maxHeight: 1080,
-        imageQuality: 85, 
+        maxWidth: 800, 
+        maxHeight: 800,
+        imageQuality: 80, 
       );
 
-      if (pickedFile != null) {
-        setState(() {
-          _imageFile = File(pickedFile.path);
-        });
-        
-        if (!context.mounted) return;
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("¡Foto capturada con éxito! Lista para subir."),
-            backgroundColor: Colors.purple,
-          ),
-        );
-      }
-    } catch (e) {
-      if (!context.mounted) return;
+      if (pickedFile == null) return;
+
+      setState(() {
+        _imageFile = File(pickedFile.path);
+        _isUploading = true;
+      });
+
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) throw Exception("Usuario no autenticado");
+
+      // Generar nombre de archivo único utilizando el tiempo actual
+      final fileName = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      // 1. Subir el archivo binario al Storage de Supabase
+      await supabase.storage.from('fotos_retos').upload(
+            fileName,
+            _imageFile!,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+          );
+
+      // 2. Obtener la URL pública de la imagen recién subida
+      final String publicUrl = supabase.storage.from('fotos_retos').getPublicUrl(fileName);
+
+      // 3. Crear el registro en la tabla de publicaciones enlazando el ID
+      await supabase.from('publicaciones').insert({
+        'usuario_id': user.id,
+        'reto_id': 1, // Enlazado al ID del reto inyectado por SQL
+        'url_foto': publicUrl,
+      });
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error al abrir la cámara: $e"),
-          backgroundColor: Colors.redAccent,
-        ),
+        const SnackBar(content: Text("¡Misión publicada con éxito en el Feed!"), backgroundColor: Colors.green),
+      );
+
+      // Regresar automáticamente al Feed principal
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error al subir reto: ${e.toString()}"), backgroundColor: Colors.redAccent),
       );
     }
   }
@@ -118,64 +145,60 @@ class _CameraScreenState extends State<CameraScreen> {
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: Colors.purple))
-        : Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: _isNear 
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_imageFile == null) ...[
-                        const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 100),
-                        const SizedBox(height: 24),
-                        const Text(
-                          "¡Estás en la ubicación del reto!",
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                          textAlign: TextAlign.center,
-                        ),
-                      ] else ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.file(_imageFile!, height: 300, width: 300, fit: BoxFit.cover),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          "Reto completado",
-                          style: TextStyle(color: Colors.greenAccent, fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                      const SizedBox(height: 30),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                        onPressed: _takePicture,
-                        icon: const Icon(Icons.camera_alt, color: Colors.white),
-                        label: Text(
-                          _imageFile == null ? "Tomar Foto de la Misión" : "Tomar otra Foto",
-                          style: const TextStyle(fontSize: 16, color: Colors.white),
-                        ),
+        : _isUploading
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.purple),
+                    SizedBox(height: 20),
+                    Text("Subiendo tu reto a la comunidad...", style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              )
+            : Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: _isNear 
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 100),
+                          const SizedBox(height: 24),
+                          const Text(
+                            "¡Estás en la ubicación del reto!",
+                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 30),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                            ),
+                            onPressed: _takeAndUploadPicture,
+                            icon: const Icon(Icons.camera_alt, color: Colors.white),
+                            label: const Text("Tomar y Subir Foto", style: TextStyle(fontSize: 16, color: Colors.white)),
+                          )
+                        ],
                       )
-                    ],
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.location_off_outlined, color: Colors.redAccent, size: 100),
-                      const SizedBox(height: 24),
-                      Text(
-                        _message == "Verificando tu ubicación..." 
-                            ? "Estás muy lejos del punto de la misión comercial." 
-                            : _message,
-                        style: const TextStyle(color: Colors.white, fontSize: 18),
-                        textAlign: TextAlign.center,
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.location_off_outlined, color: Colors.redAccent, size: 100),
+                          const SizedBox(height: 24),
+                          Text(
+                            _message == "Verificando tu ubicación..." 
+                                ? "Estás muy lejos del punto de la misión comercial." 
+                                : _message,
+                            style: const TextStyle(color: Colors.white, fontSize: 18),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-            ),
-          ),
+                ),
+              ),
     );
   }
 }

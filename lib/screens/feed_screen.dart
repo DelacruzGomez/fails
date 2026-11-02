@@ -1,22 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'camera_screen.dart'; // Importamos la pantalla de validación GPS
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class DummyPost {
-  final String username;
-  final String imageUrl;
-  final DateTime createdAt;
-  int heroesCount;
-  int failsCount;
-
-  DummyPost({
-    required this.username,
-    required this.imageUrl,
-    required this.createdAt,
-    this.heroesCount = 0,
-    this.failsCount = 0,
-  });
-}
+import 'camera_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -27,27 +14,14 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   late Timer _timer;
-  
-  final List<DummyPost> _posts = [
-    DummyPost(
-      username: "Carlos_Dev",
-      imageUrl: "https://unsplash.com",
-      createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-      heroesCount: 24,
-      failsCount: 5,
-    ),
-    DummyPost(
-      username: "Maria_Lima",
-      imageUrl: "https://unsplash.com",
-      createdAt: DateTime.now().subtract(const Duration(hours: 18)),
-      heroesCount: 12,
-      failsCount: 45,
-    ),
-  ];
+  List<dynamic> _realPosts = [];
+  bool _isLoadingFeed = true;
 
   @override
   void initState() {
     super.initState();
+    _fetchRealPosts();
+    // Actualiza los contadores de tiempo en pantalla cada segundo
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -59,7 +33,29 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
-  String _getRemainingTime(DateTime createdAt) {
+  // Descarga las publicaciones reales de la base de datos de Supabase
+  Future<void> _fetchRealPosts() async {
+    try {
+      final supabase = Supabase.instance.client;
+      // Descargamos las publicaciones ordenadas por fecha
+      final data = await supabase
+          .from('publicaciones')
+          .select('*, usuarios(username)') // Hace un "JOIN" para traer el nombre de usuario
+          .order('created_at', ascending: false);
+
+      setState(() {
+        _realPosts = data;
+        _isLoadingFeed = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingFeed = false;
+      });
+    }
+  }
+
+  String _getRemainingTime(String createdAtString) {
+    final createdAt = DateTime.parse(createdAtString).toLocal();
     final expiresAt = createdAt.add(const Duration(hours: 24));
     final difference = expiresAt.difference(DateTime.now());
 
@@ -74,6 +70,22 @@ class _FeedScreenState extends State<FeedScreen> {
     return "$hours:$minutes:$seconds";
   }
 
+  Future<void> _vote(int postId, String column, int currentCount, int index) async {
+    final supabase = Supabase.instance.client;
+    try {
+      await supabase
+          .from('publicaciones')
+          .update({column: currentCount + 1})
+          .eq('id', postId);
+      
+      setState(() {
+        _realPosts[index][column] = currentCount + 1;
+      });
+    } catch (e) {
+      // Error silencioso de votación
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,105 +96,115 @@ class _FeedScreenState extends State<FeedScreen> {
         backgroundColor: Colors.black,
         elevation: 0,
       ),
-      body: ListView.builder(
-        itemCount: _posts.length,
-        itemBuilder: (context, index) {
-          final post = _posts[index];
-          final timeRemaining = _getRemainingTime(post.createdAt);
+      body: _isLoadingFeed
+          ? const Center(child: CircularProgressIndicator(color: Colors.purple))
+          : _realPosts.isEmpty
+              ? const Center(
+                  child: Text(
+                    "No hay retos subidos hoy.\n¡Sé el primero!",
+                    style: TextStyle(color: Colors.grey, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _fetchRealPosts,
+                  color: Colors.purple,
+                  child: ListView.builder(
+                    itemCount: _realPosts.length,
+                    itemBuilder: (context, index) {
+                      final post = _realPosts[index];
+                      final timeRemaining = _getRemainingTime(post['created_at']);
+                      final username = post['usuarios'] != null ? post['usuarios']['username'] : 'anonimo';
 
-          return Container(
-            margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "@${post.username}",
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                         decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.redAccent),
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.timer, color: Colors.redAccent, size: 14),
-                            const SizedBox(width: 4),
-                            Text(
-                              timeRemaining,
-                              style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                            Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "@$username",
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.redAccent),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.timer, color: Colors.redAccent, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          timeRemaining,
+                                          style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                            ClipRRect(
+                              borderRadius: BorderRadius.zero,
+                              child: Image.network(
+                                post['url_foto'],
+                                height: 350,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    height: 350,
+                                    color: const Color(0xFF2D2D2D),
+                                    child: const Center(child: Icon(Icons.broken_image, color: Colors.white30, size: 50)),
+                                  );
+                                },
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green.withValues(alpha: 0.2),
+                                      side: const BorderSide(color: Colors.green),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    ),
+                                    onPressed: () => _vote(post['id'], 'votos_heroe', post['votos_heroe'], index),
+                                    icon: const Icon(Icons.emoji_events, color: Colors.green),
+                                    label: Text("Héroe (${post['votos_heroe']})", style: const TextStyle(color: Colors.white)),
+                                  ),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange.withValues(alpha: 0.2),
+                                      side: const BorderSide(color: Colors.orange),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    ),
+                                    onPressed: () => _vote(post['id'], 'votos_fallo', post['votos_fallo'], index),
+                                    icon: const Icon(Icons.shield, color: Colors.orange),
+                                    label: Text("Fallo (${post['votos_fallo']})", style: const TextStyle(color: Colors.white)),
+                                  ),
+                                ],
+                              ),
+                            )
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                ClipRRect(
-                  borderRadius: BorderRadius.zero,
-                  child: Image.network(
-                    post.imageUrl,
-                    height: 350,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 350,
-                        color: Colors.grey,
-                        child: const Center(child: Icon(Icons.broken_image, color: Colors.white30, size: 50)),
                       );
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.withValues(alpha: 0.2),
-                          side: const BorderSide(color: Colors.green),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                        onPressed: () {
-                          setState(() => post.heroesCount++);
-                        },
-                        icon: const Icon(Icons.emoji_events, color: Colors.green),
-                        label: Text("Héroe (${post.heroesCount})", style: const TextStyle(color: Colors.white)),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.withValues(alpha: 0.2),
-                          side: const BorderSide(color: Colors.orange),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                        onPressed: () {
-                          setState(() => post.failsCount++);
-                        },
-                        icon: const Icon(Icons.shield, color: Colors.orange),
-                        label: Text("Fallo (${post.failsCount})", style: const TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                )
-              ],
-            ),
-          );
-        },
-      ),
-      // BOTÓN FLOTANTE: Lleva al usuario a validar su ubicación
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.purple,
         onPressed: () {
@@ -190,7 +212,6 @@ class _FeedScreenState extends State<FeedScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => const CameraScreen(
-                // Mandamos coordenadas de prueba (Plaza de Armas de Lima)
                 targetLat: -12.0463,
                 targetLng: -77.0310,
               ),
