@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'feed_screen.dart';
-import 'discover_screen.dart';
+
 import 'camera_screen.dart'; // Importamos la pantalla de la cámara
+import 'discover_screen.dart';
+import 'feed_screen.dart';
 import 'profile_screen.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -65,6 +66,7 @@ class _MainNavigationState extends State<MainNavigation> {
               challengeId: latestChallenge['id'],
               targetLat: latestChallenge['latitud'],
               targetLng: latestChallenge['longitud'],
+              requiresGps: true,
             ),
           ),
         );

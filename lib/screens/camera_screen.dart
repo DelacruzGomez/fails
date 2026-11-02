@@ -6,15 +6,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'result_animation_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  final int challengeId; 
-  final double targetLat; 
-  final double targetLng; 
+  final int challengeId;
+  final double targetLat;
+  final double targetLng;
   final bool requiresGps; // Recibe si el GPS es obligatorio o libre
 
   const CameraScreen({
-    super.key, 
-    required this.challengeId, 
-    required this.targetLat, 
+    super.key,
+    required this.challengeId,
+    required this.targetLat,
     required this.targetLng,
     required this.requiresGps,
   });
