@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'feed_screen.dart';
+import 'main_navigation.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -59,10 +61,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       // Navegamos al feed manteniendo la sesión activa en segundo plano
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const FeedScreen()),
-      );
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(builder: (context) => const MainNavigation()),
+);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
