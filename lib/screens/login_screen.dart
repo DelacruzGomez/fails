@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'feed_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -11,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isEntering = false;
 
   @override
   void dispose() {
@@ -18,13 +21,66 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _enterApp() {
-    if (_formKey.currentState!.validate()) {
-      // Guardamos el usuario de forma temporal y navegamos al Feed
+  Future<void> _enterApp() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isEntering = true;
+    });
+
+    final supabase = Supabase.instance.client;
+    final usernameClean = _usernameController.text.trim().toLowerCase();
+
+    try {
+      // 1. Verificar si el nombre de usuario ya está tomado en Supabase
+      final List<dynamic> response = await supabase
+          .from('usuarios')
+          .select()
+          .eq('username', usernameClean);
+
+      String usuarioId;
+
+      if (response.isNotEmpty) {
+        // Si el usuario ya existe, tomamos su ID para iniciar sesión
+        usuarioId = response[0]['id'];
+      } else {
+        // 2. Si es nuevo, registramos una cuenta anónima temporal en Auth de Supabase
+        final authResponse = await supabase.auth.signUp(
+          email: '$usernameClean@failquest.com',
+          password: 'Password123!', // Contraseña genérica interna para el MVP
+        );
+
+        if (authResponse.user == null) throw Exception("Error al crear credenciales.");
+        usuarioId = authResponse.user!.id;
+
+        // 3. Insertamos el perfil público en nuestra tabla de usuarios creada
+        await supabase.from('usuarios').insert({
+          'id': usuarioId,
+          'username': usernameClean,
+        });
+      }
+
+      if (!mounted) return;
+
+      // Navegamos al feed de la aplicación
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const FeedScreen()),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error de conexión: ${e.toString()}"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isEntering = false;
+        });
+      }
     }
   }
 
@@ -40,7 +96,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Ícono del Logo de la App
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -48,22 +103,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.purple, width: 2),
                   ),
-                  child: const Icon(
-                    Icons.local_fire_department,
-                    color: Colors.purple,
-                    size: 60,
-                  ),
+                  child: const Icon(Icons.local_fire_department, color: Colors.purple, size: 60),
                 ),
                 const SizedBox(height: 24),
-                // Título Principal
                 const Text(
                   "FAILQUEST",
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 3,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 3, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -72,10 +117,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 40),
-                // Campo de entrada de usuario
                 TextFormField(
                   controller: _usernameController,
                   style: const TextStyle(color: Colors.white),
+                  enabled: !_isEntering,
                   decoration: InputDecoration(
                     labelText: "Elige tu nombre de usuario",
                     labelStyle: const TextStyle(color: Colors.grey),
@@ -91,14 +136,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: Colors.transparent),
                     ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.redAccent),
-                    ),
-                    focusedErrorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.redAccent, width: 2),
-                    ),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
@@ -111,27 +148,21 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                 ),
                 const SizedBox(height: 24),
-                // Botón de Ingreso Principal
                 SizedBox(
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.purple,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: _enterApp,
-                    child: const Text(
-                      "Comenzar Desafío",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    onPressed: _isEntering ? null : _enterApp,
+                    child: _isEntering
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            "Comenzar Desafío",
+                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
               ],
