@@ -1,8 +1,6 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'camera_screen.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -21,7 +19,6 @@ class _FeedScreenState extends State<FeedScreen> {
   void initState() {
     super.initState();
     _fetchRealPosts();
-    // Actualiza los contadores de tiempo en pantalla cada segundo
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -33,14 +30,12 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
-  // Descarga las publicaciones reales de la base de datos de Supabase
   Future<void> _fetchRealPosts() async {
     try {
       final supabase = Supabase.instance.client;
-      // Descargamos las publicaciones ordenadas por fecha
       final data = await supabase
           .from('publicaciones')
-          .select('*, usuarios(username)') // Hace un "JOIN" para traer el nombre de usuario
+          .select('*, usuarios(username), retos_diarios(titulo)') // Traemos también el título del reto
           .order('created_at', ascending: false);
 
       setState(() {
@@ -82,7 +77,7 @@ class _FeedScreenState extends State<FeedScreen> {
         _realPosts[index][column] = currentCount + 1;
       });
     } catch (e) {
-      // Error silencioso de votación
+      // Error silencioso
     }
   }
 
@@ -115,6 +110,10 @@ class _FeedScreenState extends State<FeedScreen> {
                       final post = _realPosts[index];
                       final timeRemaining = _getRemainingTime(post['created_at']);
                       final username = post['usuarios'] != null ? post['usuarios']['username'] : 'anonimo';
+                      // Obtenemos el título real del reto diario vinculado
+                      final challengeTitle = post['retos_diarios'] != null 
+                          ? post['retos_diarios']['titulo'] 
+                          : 'Misión Cumplida';
 
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -155,22 +154,55 @@ class _FeedScreenState extends State<FeedScreen> {
                                 ],
                               ),
                             ),
-                            ClipRRect(
-                              borderRadius: BorderRadius.zero,
-                              child: Image.network(
-                                post['url_foto'],
-                                height: 350,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
+                            
+                            // STACK COMPLETAMENTE INTEGRADO CON LA PREGUNTA FLOTANTE
+                            Stack(
+                              alignment: Alignment.bottomLeft,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.zero,
+                                  child: Image.network(
+                                    post['url_foto'],
                                     height: 350,
-                                    color: const Color(0xFF2D2D2D),
-                                    child: const Center(child: Icon(Icons.broken_image, color: Colors.white30, size: 50)),
-                                  );
-                                },
-                              ),
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        height: 350,
+                                        color: const Color(0xFF2D2D2D),
+                                        child: const Center(child: Icon(Icons.broken_image, color: Colors.white30, size: 50)),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                      colors: [
+                                        Colors.black.withValues(alpha: 0.8),
+                                        Colors.black.withValues(alpha: 0.0),
+                                      ],
+                                    ),
+                                  ),
+                                  child: Text(
+                                    "🎯 Misión: $challengeTitle",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      shadows: [
+                                        Shadow(offset: Offset(1, 1), blurRadius: 3, color: Colors.black),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
+
                             Padding(
                               padding: const EdgeInsets.all(12.0),
                               child: Row(
