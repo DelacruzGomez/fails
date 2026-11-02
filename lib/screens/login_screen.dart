@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'feed_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -30,39 +29,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final supabase = Supabase.instance.client;
     final usernameClean = _usernameController.text.trim().toLowerCase();
+    final emailGen = '$usernameClean@failquest.com';
+    const passwordGen = 'Password123!';
 
     try {
-      // 1. Verificar si el nombre de usuario ya está tomado en Supabase
-      final List<dynamic> response = await supabase
-          .from('usuarios')
-          .select()
-          .eq('username', usernameClean);
-
-      String usuarioId;
-
-      if (response.isNotEmpty) {
-        // Si el usuario ya existe, tomamos su ID para iniciar sesión
-        usuarioId = response[0]['id'];
-      } else {
-        // 2. Si es nuevo, registramos una cuenta anónima temporal en Auth de Supabase
-        final authResponse = await supabase.auth.signUp(
-          email: '$usernameClean@failquest.com',
-          password: 'Password123!', // Contraseña genérica interna para el MVP
+      // 1. Intentar iniciar sesión directamente con el usuario
+      try {
+        await supabase.auth.signInWithPassword(
+          email: emailGen,
+          password: passwordGen,
+        );
+      } on AuthException catch (_) {
+        // 2. Si el inicio falla, significa que el usuario es nuevo: lo registramos
+        await supabase.auth.signUp(
+          email: emailGen,
+          password: passwordGen,
         );
 
-        if (authResponse.user == null) throw Exception("Error al crear credenciales.");
-        usuarioId = authResponse.user!.id;
-
-        // 3. Insertamos el perfil público en nuestra tabla de usuarios creada
-        await supabase.from('usuarios').insert({
-          'id': usuarioId,
-          'username': usernameClean,
-        });
+        final user = supabase.auth.currentUser;
+        if (user != null) {
+          // 3. Guardamos su perfil público en la tabla de usuarios
+          await supabase.from('usuarios').insert({
+            'id': user.id,
+            'username': usernameClean,
+          });
+        }
       }
 
       if (!mounted) return;
 
-      // Navegamos al feed de la aplicación
+      // Navegamos al feed manteniendo la sesión activa en segundo plano
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const FeedScreen()),
@@ -71,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error de conexión: ${e.toString()}"),
+          content: Text("Error de ingreso: ${e.toString()}"),
           backgroundColor: Colors.redAccent,
         ),
       );
