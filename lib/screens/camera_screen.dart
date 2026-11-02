@@ -1,14 +1,21 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CameraScreen extends StatefulWidget {
+  final int challengeId; // Recibe el ID dinámico de la base de datos
   final double targetLat; 
   final double targetLng; 
 
-  const CameraScreen({super.key, required this.targetLat, required this.targetLng});
+  const CameraScreen({
+    super.key, 
+    required this.challengeId, 
+    required this.targetLat, 
+    required this.targetLng,
+  });
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -62,7 +69,7 @@ class _CameraScreenState extends State<CameraScreen> {
       );
 
       setState(() {
-        // Incrementado para facilitar pruebas en el MVP
+        // Rango de 500 metros a la redonda de tus coordenadas guardadas
         _isNear = distanceInMeters <= 500; 
         _isLoading = false;
       });
@@ -96,23 +103,22 @@ class _CameraScreenState extends State<CameraScreen> {
 
       if (user == null) throw Exception("Usuario no autenticado");
 
-      // Generar nombre de archivo único utilizando el tiempo actual
       final fileName = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      // 1. Subir el archivo binario al Storage de Supabase
+      // 1. Subir al Storage
       await supabase.storage.from('fotos_retos').upload(
             fileName,
             _imageFile!,
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
 
-      // 2. Obtener la URL pública de la imagen recién subida
+      // 2. Obtener URL Pública
       final String publicUrl = supabase.storage.from('fotos_retos').getPublicUrl(fileName);
 
-      // 3. Crear el registro en la tabla de publicaciones enlazando el ID
+      // 3. Crear registro vinculando el reto dinámico recibido
       await supabase.from('publicaciones').insert({
         'usuario_id': user.id,
-        'reto_id': 1, // Enlazado al ID del reto inyectado por SQL
+        'reto_id': widget.challengeId, // Vinculación dinámica corregida
         'url_foto': publicUrl,
       });
 
@@ -122,7 +128,6 @@ class _CameraScreenState extends State<CameraScreen> {
         const SnackBar(content: Text("¡Misión publicada con éxito en el Feed!"), backgroundColor: Colors.green),
       );
 
-      // Regresar automáticamente al Feed principal
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;

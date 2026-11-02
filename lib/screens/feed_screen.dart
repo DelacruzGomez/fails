@@ -207,16 +207,48 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.purple,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CameraScreen(
-                targetLat: -12.0463,
-                targetLng: -77.0310,
-              ),
-            ),
+        onPressed: () async {
+          // Mostramos una barra de carga rápida mientras lee el servidor
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.purple)),
           );
+
+          try {
+            final supabase = Supabase.instance.client;
+            // Descarga el último reto creado en Supabase (el de Ayacucho ID 2)
+            final List<dynamic> challenges = await supabase
+                .from('retos_diarios')
+                .select()
+                .order('id', ascending: false)
+                .limit(1);
+
+            if (!mounted) return;
+            Navigator.pop(context); // Cierra la barra de carga
+
+            if (challenges.isNotEmpty) {
+              final latestChallenge = challenges.first;
+              
+              // Navega a la cámara mandándole dinámicamente el ID y coordenadas reales
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CameraScreen(
+                    challengeId: latestChallenge['id'], // Mandamos el ID real (2)
+                    targetLat: latestChallenge['latitud'],
+                    targetLng: latestChallenge['longitud'],
+                  ),
+                ),
+              );
+            }
+          } catch (e) {
+            if (!mounted) return;
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Error al cargar el reto: $e"), backgroundColor: Colors.redAccent),
+            );
+          }
         },
         icon: const Icon(Icons.location_on, color: Colors.white),
         label: const Text("Ir al Reto", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
