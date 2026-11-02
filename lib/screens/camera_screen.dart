@@ -1,12 +1,12 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'result_animation_screen.dart'; // <-- IMPORTANTE: Conectamos la nueva pantalla de efectos
 
 class CameraScreen extends StatefulWidget {
-  final int challengeId; // Recibe el ID dinámico de la base de datos
+  final int challengeId; 
   final double targetLat; 
   final double targetLng; 
 
@@ -69,7 +69,6 @@ class _CameraScreenState extends State<CameraScreen> {
       );
 
       setState(() {
-        // Rango de 500 metros a la redonda de tus coordenadas guardadas
         _isNear = distanceInMeters <= 500; 
         _isLoading = false;
       });
@@ -118,22 +117,30 @@ class _CameraScreenState extends State<CameraScreen> {
       // 3. Crear registro vinculando el reto dinámico recibido
       await supabase.from('publicaciones').insert({
         'usuario_id': user.id,
-        'reto_id': widget.challengeId, // Vinculación dinámica corregida
+        'reto_id': widget.challengeId, 
         'url_foto': publicUrl,
       });
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("¡Misión publicada con éxito en el Feed!"), backgroundColor: Colors.green),
+      // CAMBIO: Lanzamos la interfaz de juego con sonido y animación de victoria
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ResultAnimationScreen(isSuccess: true),
+        ),
       );
 
-      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error al subir reto: ${e.toString()}"), backgroundColor: Colors.redAccent),
+
+      // CAMBIO: Si falla la subida por internet, lanzamos la pantalla de Soldado Caído con sonido de derrota
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ResultAnimationScreen(isSuccess: false),
+        ),
       );
     }
   }

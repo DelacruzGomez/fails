@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'feed_screen.dart';
 import 'discover_screen.dart';
-import 'create_screen.dart';
+import 'camera_screen.dart'; // Importamos la pantalla de la cámara
 import 'profile_screen.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -14,18 +15,67 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _selectedIndex = 0;
 
-  // Lista de las 4 pantallas principales
   final List<Widget> _screens = [
     const FeedScreen(),
     const DiscoverScreen(),
-    const CreateScreen(),
+    const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.purple))), // Pantalla temporal de carga
     const ProfileScreen(),
   ];
 
-  void _onItemTapped(int index) {
+  // Función que controla los clics en la barra inferior
+  void _onItemTapped(int index) async {
+    // Si presiona la pestaña del centro (Misión - Índice 2), abrimos el validador GPS directamente
+    if (index == 2) {
+      _openChallengeCamera();
+      return;
+    }
+    
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  // Descarga el último reto e inicia la validación geográfica
+  Future<void> _openChallengeCamera() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.purple)),
+    );
+
+    try {
+      final supabase = Supabase.instance.client;
+      final List<dynamic> challenges = await supabase
+          .from('retos_diarios')
+          .select()
+          .order('id', ascending: false)
+          .limit(1);
+
+      if (!mounted) return;
+      Navigator.pop(context); // Cierra el indicador de carga
+
+      if (challenges.isNotEmpty) {
+        final latestChallenge = challenges.first;
+        
+        // Abre el validador nativo de tu cámara
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CameraScreen(
+              challengeId: latestChallenge['id'],
+              targetLat: latestChallenge['latitud'],
+              targetLng: latestChallenge['longitud'],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error al cargar misión: $e"), backgroundColor: Colors.redAccent),
+      );
+    }
   }
 
   @override
@@ -33,7 +83,7 @@ class _MainNavigationState extends State<MainNavigation> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: _screens, // Mantiene el estado vivo de cada pestaña al cambiar
+        children: _screens,
       ),
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
@@ -61,7 +111,7 @@ class _MainNavigationState extends State<MainNavigation> {
               label: 'Retos',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.add_circle, size: 32, color: Colors.purple), // Resaltado tipo TikTok
+              icon: Icon(Icons.add_circle, size: 32, color: Colors.purple),
               label: 'Misión',
             ),
             BottomNavigationBarItem(
