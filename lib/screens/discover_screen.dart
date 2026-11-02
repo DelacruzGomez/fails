@@ -19,14 +19,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _loadTodayChallenges();
   }
 
-  // Descarga todos los retos creados en las últimas 24 horas
   Future<void> _loadTodayChallenges() async {
     try {
       final supabase = Supabase.instance.client;
       final data = await supabase
           .from('retos_diarios')
           .select()
-          .order('created_at', ascending: false); // En producción usar filtro de 24h
+          .order('created_at', ascending: false);
 
       setState(() {
         _activeChallenges = data;
@@ -42,7 +41,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
-        title: const Text("MISIONES DISPONIBLES", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
+        title: const Text("MISIONES VIGENTES", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
         centerTitle: true,
         backgroundColor: Colors.black,
         elevation: 0,
@@ -55,6 +54,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   itemCount: _activeChallenges.length,
                   itemBuilder: (context, index) {
                     final challenge = _activeChallenges[index];
+                    final String tag = challenge['etiqueta'] ?? 'global';
+                    final bool requiresGps = challenge['requiere_gps'] ?? false;
 
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -68,19 +69,52 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Icon(Icons.stars, color: Colors.amber, size: 20),
-                              const SizedBox(width: 6),
-                              Text(
-                                "Reto #${challenge['id']}",
-                                style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold),
+                              // Hashtag estilo TikTok/Filtro geográfico
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  "#$tag",
+                                  style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ),
+                              // Indicador de tipo de reto
+                              Row(
+                                children: [
+                                  Icon(
+                                    requiresGps ? Icons.location_on : Icons.bolt,
+                                    color: requiresGps ? Colors.redAccent : Colors.amber,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    requiresGps ? "Zona Específica" : "Acción Libre",
+                                    style: TextStyle(
+                                      color: requiresGps ? Colors.redAccent : Colors.amber, 
+                                      fontSize: 12, 
+                                      fontWeight: FontWeight.w600
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                           Text(
                             challenge['titulo'],
                             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            requiresGps 
+                                ? "📍 Debes trasladarte al punto de encuentro para desbloquear." 
+                                : "📱 ¡Puedes cumplir esta misión desde cualquier lugar ahora mismo!",
+                            style: const TextStyle(color: Colors.grey, fontSize: 13),
                           ),
                           const SizedBox(height: 16),
                           SizedBox(
@@ -92,7 +126,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                               onPressed: () {
-                                // Navega a la cámara mandando los datos específicos del reto elegido
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -100,11 +133,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                       challengeId: challenge['id'],
                                       targetLat: challenge['latitud'],
                                       targetLng: challenge['longitud'],
+                                      requiresGps: requiresGps, // Pasamos el nuevo parámetro
                                     ),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.gps_fixed, color: Colors.white, size: 18),
+                              icon: const Icon(Icons.center_focus_strong, color: Colors.white, size: 18),
                               label: const Text("Cumplir Reto ahora", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                           ),

@@ -3,18 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'result_animation_screen.dart'; // <-- IMPORTANTE: Conectamos la nueva pantalla de efectos
+import 'result_animation_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   final int challengeId; 
   final double targetLat; 
   final double targetLng; 
+  final bool requiresGps; // Recibe si el GPS es obligatorio o libre
 
   const CameraScreen({
     super.key, 
     required this.challengeId, 
     required this.targetLat, 
     required this.targetLng,
+    required this.requiresGps,
   });
 
   @override
@@ -26,6 +28,7 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isLoading = true;
   bool _isUploading = false;
   String _message = "Verificando tu ubicación...";
+  int _distanceText = 0;
   File? _imageFile;
 
   @override
@@ -35,6 +38,15 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> _checkLocation() async {
+    // Si el reto NO requiere GPS, le damos acceso inmediato sin validar coordenadas
+    if (!widget.requiresGps) {
+      setState(() {
+        _isNear = true;
+        _isLoading = false;
+      });
+      return;
+    }
+
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -69,8 +81,10 @@ class _CameraScreenState extends State<CameraScreen> {
       );
 
       setState(() {
+        _distanceText = distanceInMeters.round();
         _isNear = distanceInMeters <= 500; 
         _isLoading = false;
+        _message = "Te encuentras a $_distanceText metros de la zona comercial de la misión.";
       });
     } catch (e) {
       setState(() {
@@ -104,17 +118,14 @@ class _CameraScreenState extends State<CameraScreen> {
 
       final fileName = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      // 1. Subir al Storage
       await supabase.storage.from('fotos_retos').upload(
             fileName,
             _imageFile!,
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
 
-      // 2. Obtener URL Pública
       final String publicUrl = supabase.storage.from('fotos_retos').getPublicUrl(fileName);
 
-      // 3. Crear registro vinculando el reto dinámico recibido
       await supabase.from('publicaciones').insert({
         'usuario_id': user.id,
         'reto_id': widget.challengeId, 
@@ -123,24 +134,17 @@ class _CameraScreenState extends State<CameraScreen> {
 
       if (!mounted) return;
 
-      // CAMBIO: Lanzamos la interfaz de juego con sonido y animación de victoria
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) => const ResultAnimationScreen(isSuccess: true),
-        ),
+        MaterialPageRoute(builder: (context) => const ResultAnimationScreen(isSuccess: true)),
       );
 
     } catch (e) {
       if (!mounted) return;
       setState(() => _isUploading = false);
-
-      // CAMBIO: Si falla la subida por internet, lanzamos la pantalla de Soldado Caído con sonido de derrota
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (context) => const ResultAnimationScreen(isSuccess: false),
-        ),
+        MaterialPageRoute(builder: (context) => const ResultAnimationScreen(isSuccess: false)),
       );
     }
   }
@@ -178,7 +182,7 @@ class _CameraScreenState extends State<CameraScreen> {
                           const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 100),
                           const SizedBox(height: 24),
                           const Text(
-                            "¡Estás en la ubicación del reto!",
+                            "¡Requisitos de zona validados!",
                             style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                             textAlign: TextAlign.center,
                           ),
@@ -201,10 +205,14 @@ class _CameraScreenState extends State<CameraScreen> {
                           const Icon(Icons.location_off_outlined, color: Colors.redAccent, size: 100),
                           const SizedBox(height: 24),
                           Text(
-                            _message == "Verificando tu ubicación..." 
-                                ? "Estás muy lejos del punto de la misión comercial." 
-                                : _message,
-                            style: const TextStyle(color: Colors.white, fontSize: 18),
+                            _message,
+                            style: const TextStyle(color: Colors.white, fontSize: 16),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            "Camina hacia la ubicación indicada en la tarjeta del reto para desbloquear.",
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
                             textAlign: TextAlign.center,
                           ),
                         ],
